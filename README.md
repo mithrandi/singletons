@@ -1,8 +1,9 @@
-singletons 2.6
-==============
+`singletons`
+============
 
-[![Hackage](https://img.shields.io/hackage/v/singletons.svg)](http://hackage.haskell.org/package/singletons)
 [![Build Status](https://travis-ci.org/goldfirere/singletons.svg?branch=master)](https://travis-ci.org/goldfirere/singletons)
+
+TODO: Revise this
 
 This is the README file for the singletons library. This file contains all the
 documentation for the definitions and functions in the library.

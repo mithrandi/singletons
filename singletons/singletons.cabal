@@ -1,0 +1,54 @@
+name:           singletons
+version:        3.0
+cabal-version:  >= 1.10
+synopsis:       A framework for generating singleton types
+homepage:       http://www.github.com/goldfirere/singletons
+category:       Dependent Types
+author:         Richard Eisenberg <rae@cs.brynmawr.edu>, Jan Stolarek <jan.stolarek@p.lodz.pl>
+maintainer:     Ryan Scott <ryan.gl.scott@gmail.com>
+bug-reports:    https://github.com/goldfirere/singletons/issues
+stability:      experimental
+tested-with:    GHC == 8.8.1
+extra-source-files: README.md, CHANGES.md
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+description:
+    TODO: Revise this
+    .
+    This library generates singleton types, promoted functions, and singleton
+    functions using Template Haskell. It is useful for programmers who wish
+    to use dependently typed programming techniques. The library was originally
+    presented in /Dependently Typed Programming with Singletons/, published
+    at the Haskell Symposium, 2012.
+    (<https://cs.brynmawr.edu/~rae/papers/2012/singletons/paper.pdf>)
+    .
+    Version 1.0 and onwards works a lot harder to promote functions. See the
+    paper published at Haskell Symposium, 2014:
+    <https://cs.brynmawr.edu/~rae/papers/2014/promotion/promotion.pdf>.
+
+source-repository this
+  type:     git
+  location: https://github.com/goldfirere/singletons.git
+  subdir:   singletons
+  tag:      v3.0
+
+source-repository head
+  type:     git
+  location: https://github.com/goldfirere/singletons.git
+  subdir:   singletons
+  branch:   master
+
+custom-setup
+  setup-depends:
+    base      >= 4.13 && < 4.14,
+    Cabal     >= 2.5 && < 3.1,
+    directory >= 1,
+    filepath  >= 1.3
+
+library
+  hs-source-dirs:     src
+  build-depends:      base >= 4.13 && < 4.14
+  default-language:   Haskell2010
+  exposed-modules:    Data.Singletons
+  ghc-options:        -Wall
