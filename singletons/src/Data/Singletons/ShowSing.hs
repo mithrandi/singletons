@@ -8,6 +8,8 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -45,7 +47,9 @@ module Data.Singletons.ShowSing (
 #if __GLASGOW_HASKELL__ >= 806
 import Data.Kind
 import Data.Singletons
+import Text.Show
 
+-- TODO RGS: Revise the documentation below now that ShowSing /can/ be derived.
 -- | In addition to the promoted and singled versions of the 'Show' class that
 -- @singletons-base@ provides, it is also useful to be able to directly define
 -- 'Show' instances for singleton types themselves. Doing so is almost entirely
@@ -203,7 +207,8 @@ instance (forall (z :: k). ShowSing' z) => ShowSing (k :: Type)
 #if __GLASGOW_HASKELL__ >= 810
 type ShowSing' :: k -> Constraint
 #endif
-class    Show (Sing z) => ShowSing' (z :: k)
+class    (forall (sing :: k -> Type). sing ~ Sing => Show (sing z))
+                       => ShowSing' (z :: k)
 instance Show (Sing z) => ShowSing' (z :: k)
 
 {-
@@ -282,13 +287,15 @@ ultimately went with.
 -- (S)WrappedSing instances
 ------------------------------------------------------------
 
+-- TODO RGS: Describe why this hack is necessary.
 instance ShowSing k => Show (WrappedSing (a :: k)) where
-  showsPrec p (WrapSing s) = showParen (p >= 11) $
-    showString "WrapSing {unwrapSing = " . showsPrec 0 s . showChar '}'
-      :: ShowSing' a => ShowS
+  showsPrec = showsWrappedSingPrec
+  show x = showsWrappedSingPrec 0 x ""
+  showList = showListWith (showsWrappedSingPrec 0)
 
-instance ShowSing k => Show (SWrappedSing (ws :: WrappedSing (a :: k))) where
-  showsPrec p (SWrapSing s) = showParen (p >= 11) $
-    showString "SWrapSing {sUnwrapSing = " . showsPrec 0 s . showChar '}'
-      :: ShowSing' a => ShowS
+showsWrappedSingPrec :: ShowSing k => Int -> WrappedSing (a :: k) -> ShowS
+showsWrappedSingPrec p (WrapSing s) = showParen (p >= 11) $
+  showString "WrapSing {unwrapSing = " . showsPrec 0 s . showChar '}'
+
+deriving instance ShowSing k => Show (SWrappedSing (ws :: WrappedSing (a :: k)))
 #endif

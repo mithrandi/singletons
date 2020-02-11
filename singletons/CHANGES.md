@@ -19,6 +19,7 @@ Changelog for singletons project
   Consult the changelogs for `singletons-th` and `singletons-base` for changes
   specific to those libraries. For more information on this split, see the
   [relevant GitHub discussion](https://github.com/goldfirere/singletons/issues/420).
+* TODO RGS: Derivable `ShowSing` changes
 
 2.7
 ---
