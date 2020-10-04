@@ -190,6 +190,11 @@ extractTvbName :: DTyVarBndr flag -> Name
 extractTvbName (DPlainTV n _)    = n
 extractTvbName (DKindedTV n _ _) = n
 
+-- extract the flag from a TyVarBndr.
+extractTvbFlag :: DTyVarBndr flag -> flag
+extractTvbFlag (DPlainTV _ f)    = f
+extractTvbFlag (DKindedTV _ f _) = f
+
 tvbToType :: DTyVarBndr flag -> DType
 tvbToType = DVarT . extractTvbName
 
@@ -441,7 +446,7 @@ foldType :: DType -> [DType] -> DType
 foldType = foldl DAppT
 
 -- apply a type to a list of type variable binders
-foldTypeTvbs :: DType -> [DTyVarBndr flag] -> DType
+foldTypeTvbs :: DType -> [DTyVarBndrUnit] -> DType
 foldTypeTvbs ty = foldType ty . map tvbToType
 
 -- Construct a data type's variable binders, possibly using fresh variables

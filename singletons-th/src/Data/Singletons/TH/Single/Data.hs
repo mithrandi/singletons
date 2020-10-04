@@ -22,6 +22,7 @@ import Data.Singletons.TH.Single.Type
 import Data.Singletons.TH.Syntax
 import Data.Singletons.TH.Util
 import Control.Monad
+import Data.Foldable
 
 -- We wish to consider the promotion of "Rep" to be *
 -- not a promoted data constructor.
@@ -211,10 +212,11 @@ singCtor dataName (DCon con_tvbs cxt name fields rty)
                       -- See Note [singletons-th and record selectors]
   return $ DCon all_tvbs [] sName conFields
                 (DConT (singledDataTypeName opts dataName) `DAppT`
-                  (foldType pCon indices `DSigT` rty'))
-                  -- Make sure to include an explicit `rty'` kind annotation.
+                  (foldType (foldl' app_kind_spec pCon kvbs) indices))
+                  -- Make sure to apply pCon to the kind variables using
+                  -- visible kind application.
                   -- See Note [Preserve the order of type variables during singling],
-                  -- wrinkle 3, in D.S.TH.Single.Type.
+                  -- wrinkle 2, in D.S.TH.Single.Type.
   where
     mk_source_unpackedness :: SourceUnpackedness -> SgM SourceUnpackedness
     mk_source_unpackedness su = case su of
@@ -233,6 +235,20 @@ singCtor dataName (DCon con_tvbs cxt name fields rty)
     mk_bang_type :: Bang -> DType -> SgM DBangType
     mk_bang_type b index = do b' <- mk_bang b
                               pure (b', DAppT singFamily index)
+
+    -- `app_kind_spec f x` takes two arguments:
+    --
+    -- 1. A type `f` of kind `forall a. r`.
+    --
+    -- 2. A type variable binder `x`, whose specificity is assumed to be the
+    --    same as the `a` in the kind of `f`.
+    --
+    -- If `a` is specified, then return `f @x`. If `a` is inferred (and
+    -- therefore not eligible for visible kind application), simply return `f`.
+    app_kind_spec :: DType -> DTyVarBndrSpec -> DType
+    app_kind_spec f x = case extractTvbFlag x of
+      SpecifiedSpec -> f `DAppKindT` tvbToType x
+      InferredSpec  -> f
 
 {-
 Note [singletons-th and record selectors]

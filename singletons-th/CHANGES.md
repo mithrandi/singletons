@@ -74,6 +74,9 @@ Changelog for singletons-th project
       natMinus a@(S _) Z     = a
       |])
     ```
+* Singled data constructors now use visible kind application under the hood,
+  which may require enabling `TypeApplications` in code that did not require it
+  before.
 * The specification for how `singletons` deals with record selectors has been
   simplified. Previously, `singletons` would try to avoid promoting so-called
   "naughty" selectors (those whose types mention existential type variables

@@ -43,7 +43,7 @@ singType bound_kvs prom ty = do
       res'  = singFamily `DAppT` (foldl apply prom (map DVarT arg_names) `DSigT` prom_res)
                 -- Make sure to include an explicit `prom_res` kind annotation.
                 -- See Note [Preserve the order of type variables during singling],
-                -- wrinkle 3.
+                -- wrinkle 2.
       kvbs     = singTypeKVBs orig_tvbs prom_args cxt' prom_res bound_kvs
       all_tvbs = kvbs ++ zipWith (`DKindedTV` SpecifiedSpec) arg_names prom_args
       ty'      = ravelVanillaDType all_tvbs cxt' args' res'
@@ -180,48 +180,7 @@ synthesize a `forall` with that order. The `singTypeKVBs` function implements
 this logic.
 
 -----
--- Wrinkle 2: The TH reification swamp
------
-
-There is another issue with type signatures that lack explicit `forall`s, one
-which the current design of Template Haskell does not make simple to fix.
-If we single code that is wrapped in TH quotes, such as in the following example:
-
-  $(singletons [d|
-    data Proxy (a :: k) where
-      MkProxy :: Proxy a
-    |])
-
-Then our job is made much easier when singling MkProxy, since we know that the
-only type variable that must be quantified is `a`, as that is the only one
-specified in the type signature.
-
-However, this is not the only possible way to single MkProxy. One can
-alternatively use $(genSingletons [''Proxy]), which uses TH reification to
-infer the type of MkProxy. There is perilous, however, because this is how
-TH reifies MkProxy:
-
-  ForallC [KindedTV k StarT,KindedTV a (VarT k)] []
-          (GadtC [MkProxy] [] (AppT (ConT Proxy) (VarT a)))
-
-In terms of actual Haskell code, that's:
-
-  MkProxy :: forall k (a :: k). Proxy a
-
-This is subtly different than before, as `k` is now specified. Contrast this
-with `MkProxy :: Proxy a`, where `k` is invisible. In other words, if you
-single MkProxy using genSingletons, then `Proxy @True` will typecheck but
-`SMkProxy @True` will /not/ typecheck—you'd have to use `SMkProxy @_ @True`
-instead. Urk!
-
-At present, Template Haskell does not have a way to distinguish specified from
-inferred type variables—see GHC #17159—and it is unclear how one could work
-around this issue withouf first fixing #17159 upstream. Thankfully, it is
-only likely to bite in situations where the original type signature uses
-inferred variables, so the damage is somewhat minimal.
-
------
--- Wrinkle 3: Where to put explicit kind annotations
+-- Wrinkle 2: Where to put explicit kind annotations
 -----
 
 Type variable binders are only part of the story—we must also determine what
@@ -234,68 +193,105 @@ original type signature is of the form:
 Then the singled type signature will be:
 
   sF :: forall a_1 ... a_m (x_1 :: PT_1) ... (x_p :: PT_p). (SC_1, ..., SC_n)
-     => Sing x1 -> ... -> Sing x_p -> SRes (F x1 ... x_p :: PR)
+     => Sing x1 -> ... -> Sing x_p -> Sing (F x1 ... x_p :: PR)
 
 Where:
 
+* F is the promoted version of the function f, PT_i is the promoted version of
+  the type T_i, and PR is the promoted version of the type R.
 * x_i is a fresh type variable of kind PT_i.
-* PT_i is the promoted version of the type T_i, and PR is the promoted version
-  of the type R.
 * SC_i is the singled version of the constraint SC_i.
-* SRes is either `Sing` if dealing with a function, or a singled data type if
-  dealing with a data constructor. For instance, SRes is `SBool` in
-  `STrue :: SBool (True :: Bool)`.
 
-One aspect of this worth pointing out is the explicit `:: PR` kind annotation
-in the result type `Sing (F x1 ... x_p :: PR)`. As it turns out, this kind
-annotation is mandatory, as omitting can result in singled type signatures
-with the wrong semantics. For instance, consider the `Nothing` data
-constructor:
+The `singType` function is responsible for this.
 
-  Nothing :: forall a. Maybe a
-
-Consider what would happen if it were singled to this type:
-
-  SNothing :: forall a. SMaybe Nothing
-
-This is not what we want at all, since the `a` has no connection to the
-`Nothing` in the result type. It's as if we had written this:
-
-  SNothing :: forall {t} a. SMaybe (Nothing :: Maybe t)
-
-If we instead generate `forall a. SMaybe (Nothing :: Maybe a)`, then this issue
-is handily avoided.
-
-You might wonder if it would be cleaner to use visible kind applications
-instead:
-
-  SNothing :: forall a. SMaybe (Nothing @a)
-
-This does work for many cases, but there are also some corner cases where this
-approach fails. Recall the `MkProxy` example from Wrinkle 2 above:
-
-  data Proxy (a :: k) where
-    MkProxy :: Proxy a
-  $(genSingletons [''Proxy])
-
-Due to the design of Template Haskell (discussed in Wrinkle 2), `MkProxy` will
-be reified with the type of `forall k (a :: k). Proxy a`. This means that
-if we used visible kind applications in the result type, we would end up with
-this:
-
-  SMkProxy :: forall k (a :: k). SProxy (MkProxy @k @a)
-
-This will not kind-check because MkProxy only accepts /one/ visible kind argument,
-whereas this supplies it with two. To avoid this issue, we instead use the type
-`forall k (a :: k). SProxy (MkProxy :: Proxy a)`. Granted, this type is /still/
-technically wrong due to the fact that it explicitly quantifies `k`, but at the
-very least it typechecks. If GHC #17159 were fixed, we could revisit this
-design choice.
-
-Finally, note that we need only write `Sing x_1 -> ... -> Sing x_p`, and not
+Note that we need only write `Sing x_1 -> ... -> Sing x_p`, and not
 `Sing (x_1 :: PT_1) -> ... Sing (x_p :: PT_p)`. This is simply because we
 always use explicit `forall`s in singled type signatures, and therefore always
 explicitly bind `(x_1 :: PT_1) ... (x_p :: PT_p)`, which fully determine the
 kinds of `x_1 ... x_p`. It wouldn't be wrong to add extra kind annotations to
 `Sing x_1 -> ... -> Sing x_p`, just redundant.
+
+On the other hand, the explicit `:: PR` kind annotation in the result type
+`Sing (F x1 ... x_p :: PR)` is mandatory. Omitting this annotation can result
+in singled type signatures with the wrong semantics. For instance, consider
+this function:
+
+  nuthin :: forall a. Maybe a
+  nuthin = Nothing
+
+Consider what would happen if nuthin were singled like this:
+
+  sNuthin :: forall a. Sing Nuthin
+
+This is not what we want at all, since the `a` has no connection to the
+Nuthin in the result type. It's as if we had written this:
+
+  sNuthin :: forall {t} a. Sing (Nuthin :: Maybe t)
+
+If we instead generate `forall a. Sing (Nuthin :: Maybe a)`, then this issue
+is handily avoided.
+
+A similar template is used for data constructors. If a data constructor is of
+the form:
+
+  MkD :: forall a_1 ... a_m. (C_1, ..., C_n)
+      => T_1 -> ... -> T_p -> D
+
+Then the singled data constructor type will be:
+
+  SMkD :: forall a_1 ... a_m (x_1 :: PT_1) ... (x_p :: PT_p). (SC_1, ..., SC_n)
+       => Sing x1 -> ... -> Sing x_p -> SD (MkD @a_1 ... @a_m x1 ... x_p)
+
+There are two differences in the way this is singled when compared to function
+type signatures, and both of these differences pertain to the result type:
+
+1. Rather than using Sing in the result type, the singled version of the data
+   type name is used instead. This is important, as GADT constructors do not
+   permit return types that are headed by a type family.
+2. Rather than using an explicit `:: PR` kind annotation in the result type,
+   visible kind application is used instead. This accomplishes the same end
+   result as using an explicit kind annotation—namely, disambiguating all of
+   the type variables involved—but in a cleaner fashion.
+
+The `D.S.TH.Single.Data.singCtor` function is responsible for this.
+
+Why do we do things differently for data constructor types than we do for
+other types? That is, why do we not use the `singCtor` template in `singType`
+as well? There are two reasons why this template would be ill suited for
+`singType`:
+
+1. Data constructor type signatures always have a result type that is headed
+   by a data constructor (e.g., D), so it is always possible to come up with
+   a singled counterpart to the data constructor name (e.g., SD) instead of
+   using `Sing` in the singled return type. This is not always the case for
+   functions in general. For example, consider `id :: a -> a`, whose return
+   type is simply a type variable. Here, we have no choice but to use `Sing` in
+   the singled return type.
+2. A data constructor and its promoted counterpart will always quantify their
+   type variables in the exact same order, so using visible kind application
+   in the way described above will always succeed. This property does not hold
+   for functions in general, however. As explained in
+   Note [Promoted class methods and kind variable ordering] in D.S.TH.Promote,
+   if you promote the following class:
+
+    class C (b :: Type) where
+      m :: forall a. a -> b -> a
+
+   You will get the following:
+
+    class PC (b :: Type) where
+      type M (x :: a) (y :: b) :: a
+
+   The order of type variables in the types of `m` and `M` is different:
+   `m` quantifies `b` first, while `M` quantifies `a` first. As a result, a
+   naïve attempt at singling `m` like this would fail:
+
+     class SC (b :: Type) where
+       sM :: forall a (x_1 :: a) (x_2 :: b).
+             Sing x_1 -> Sing x_2 -> Sing (M @b @a x_1 x2)
+
+   As a result, we don't bother with visible kind application in `singType`.
+   One could imagine carving out a special case in `singType` for promoted
+   class methods, but when I tried doing this, I found that the amount of
+   effort it required didn't justify the result.
 -}
